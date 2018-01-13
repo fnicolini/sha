@@ -62,14 +62,16 @@ int main(int argc, char const *argv[]) {
 	while(elementsRead = fread(buffer, 1, 64, fp) == 64) {   // reading 512 bits
 
 		// convert into array of 16 32-bits elements NOTA: SI POTREBBE GIÀ FARE LA TRASFORMAZIONE IN BIG ENDIAN QUI, aumento di efficienza
-		for (int i = 0; i < 64; i+=4) {
-			w[i] = buffer[i];
-			w[i] << 8;
-			w[i] |= buffer[i+1];
-			w[i] << 8;
-			w[i] |= buffer[i+2];
-			w[i] << 8;
-			w[i] |= buffer[i+3];
+		int j = 0;
+		for (int i = 0; i < 64; i += 4) {
+			w[j] = buffer[i];
+			w[j] << 8;
+			w[j] |= buffer[i+1];
+			w[j] << 8;
+			w[j] |= buffer[i+2];
+			w[j] << 8;
+			w[j] |= buffer[i+3];
+			j++;
 
 		}
 
@@ -125,12 +127,81 @@ int main(int argc, char const *argv[]) {
 	}
 	fclose(fp);
 
-	// MANCA DA GESTIRE L'ULTIMO CHUNK
+	uint8_t wordsFilled = elementsRead / 4;
+	uint8_t rest = elementsRead % 4;
 
+	int j = 0;
+	for (int i = 0; i < elementsRead - rest; i += 4) {
+		w[j] = buffer[i];
+		w[j] << 8;
+		w[j] |= buffer[i+1];
+		w[j] << 8;
+		w[j] |= buffer[i+2];
+		w[j] << 8;
+		w[j] |= buffer[i+3];
+		j++;
+	}
 
+	for (int i = elementsRead - rest; i < elementsRead; ++i) {
+		w[j] = buffer[i];
+		w[j] << 8;
+	}
+	j++;
 
+	for (j; j < 16; ++j) {
+		w[j] = 0;
+	}
 
+	// transform to big endian
+	for (int i = 0; i < 16; ++i) {
+		w[i] = bswap_32(w[i]);
+	}	
 
+	//extension into sixty-four 32-bit words
+
+	for (int i = 16; i < 64; ++i) {
+		s0 = S0(w[i-15]);
+		s1 = S1(w[i-2]);
+		w[i] = w[i-16] + s0 + w[i-7] + s1;
+	}
+
+	// Initialize hash value for this chunk
+
+	a = h0;
+	b = h1;
+	c = h2;
+	d = h3;
+	e = h4;
+	f = h5;
+	g = h6;
+	h = h7;
+
+	//main loop
+	for (int i = 0; i < 64; ++i) {
+		t2 = M0(a) + MAJ(a, b, c);
+		t1 = h + M1(e) + CH(e, f, g) + k[i] + w[i];
+		h = g;
+		g = f;
+		f = e;
+		e = d + t1;
+		d = c;
+		c = b;
+		b = a;
+		a = t1 + t2;
+	}
+
+	// update h0 h1 ... values
+
+	h0 += a;
+	h1 += b;
+	h2 += c;
+	h3 += d;
+	h4 += e;
+	h5 += f;
+	h6 += g;
+	h7 += h;
+
+	printf("sha256 = %x%x%x%x%x%x%x\n", h0, h1, h2, h3, h4, h5, h6, h7);
 
 
 
