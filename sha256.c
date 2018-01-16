@@ -53,6 +53,13 @@ int main(int argc, char const *argv[]) {
 		return(1);
 	}
 
+	uint64_t fileSize = 0;
+	fseek(fp, 0L, SEEK_END);
+	fileSize = ftell(fp);
+	rewind(fp);
+
+	int oneMoreChunk = 0;
+
 	uint32_t w[64]; // 512 bits chunk buffer + space for extension to 64 32-bits words
 	size_t elementsRead = 0;
 
@@ -61,24 +68,24 @@ int main(int argc, char const *argv[]) {
 	// main cycle
 	while(elementsRead = fread(buffer, 1, 64, fp) == 64) {   // reading 512 bits
 
-		// convert into array of 16 32-bits elements NOTA: SI POTREBBE GIÀ FARE LA TRASFORMAZIONE IN BIG ENDIAN QUI, aumento di efficienza
 		int j = 0;
 		for (int i = 0; i < 64; i += 4) {
-			w[j] = buffer[i];
-			w[j] << 8;
-			w[j] |= buffer[i+1];
+			w[j] = buffer[i+3];
 			w[j] << 8;
 			w[j] |= buffer[i+2];
 			w[j] << 8;
-			w[j] |= buffer[i+3];
+			w[j] |= buffer[i+1];
+			w[j] << 8;
+			w[j] |= buffer[i];
 			j++;
 
 		}
 
-		// transform to big endian
+		/* transform to big endian
 		for (int i = 0; i < 16; ++i) {
 			w[i] = bswap_32(w[i]);
 		}
+		*/
 
 		//extension into sixty-four 32-bit words
 
@@ -132,30 +139,70 @@ int main(int argc, char const *argv[]) {
 
 	int j = 0;
 	for (int i = 0; i < elementsRead - rest; i += 4) {
-		w[j] = buffer[i];
-		w[j] << 8;
-		w[j] |= buffer[i+1];
+		w[j] = buffer[i+3];
 		w[j] << 8;
 		w[j] |= buffer[i+2];
 		w[j] << 8;
-		w[j] |= buffer[i+3];
+		w[j] |= buffer[i+1];
+		w[j] << 8;
+		w[j] |= buffer[i];
 		j++;
 	}
 
-	for (int i = elementsRead - rest; i < elementsRead; ++i) {
-		w[j] = buffer[i];
+	if(rest > 0) { // && < 4
+		for (int i = elementsRead - rest; i < elementsRead; ++i) {
+			w[j] |= buffer[i];
+			w[j] << 8;
+		}
+
+		w[j] != 0x80;
 		w[j] << 8;
-	}
-	j++;
 
-	for (j; j < 16; ++j) {
-		w[j] = 0;
+		if(4 - (rest + 1) == 1)
+			w[j] &= 0xffffff00;
+
+		else if (4 - (rest + 1) == 2) {
+			w[j] &= 0xffffff00;
+			w[j] << 8;
+			w[j] &= 0xffffff00;
+		}
+		j++;
+
 	}
 
-	// transform to big endian
-	for (int i = 0; i < 16; ++i) {
-		w[i] = bswap_32(w[i]);
-	}	
+	if((16 - j) >= 2) { // numero di word da 32bit liberi rimanenti nel chunk
+		//c'è spazio subito in questo chunk per la lunghezza a 64 bit
+		for (j; j < 14; ++j) {
+			w[j] == 0;
+		}
+
+		printf("FILESIZE HEX = %llx\n", fileSize);
+
+		w[14] = fileSize & 0x00000000000000ff;
+		w[14] <<= 8;
+		w[14] |= (fileSize >> 8) & 0x00000000000000ff;
+		w[14] <<= 8;
+		w[14] |= (fileSize >> 16) & 0x00000000000000ff;
+		w[14] <<= 8;
+		w[14] |= (fileSize >> 24) & 0x00000000000000ff;
+
+		w[15] = (fileSize >> 32) & 0x00000000000000ff;
+		w[15] <<= 8;
+		w[15] |= (fileSize >> 40) & 0x00000000000000ff;
+		w[15] <<= 8;
+		w[15] |= (fileSize >> 48) & 0x00000000000000ff;
+		w[15] <<= 8;
+		w[15] |= (fileSize >> 56) & 0x00000000000000ff;
+
+		printf("W14 HEX = %lx\n", w[14]);
+		printf("W15 HEX = %lx\n", w[15]);
+	}
+	else {
+		for (j; j < 16; ++j) { // executed max once
+			w[j] = 0;
+		}
+		oneMoreChunk = 1;
+	}
 
 	//extension into sixty-four 32-bit words
 
@@ -200,6 +247,75 @@ int main(int argc, char const *argv[]) {
 	h5 += f;
 	h6 += g;
 	h7 += h;
+
+	if(oneMoreChunk) {
+		for (int i = 0; i < 14; ++i) {
+			w[i] = 0;
+		}
+
+		w[14] = fileSize & 0x00000000000000ff;
+		w[14] <<= 8;
+		w[14] |= (fileSize >> 8) & 0x00000000000000ff;
+		w[14] <<= 8;
+		w[14] |= (fileSize >> 16) & 0x00000000000000ff;
+		w[14] <<= 8;
+		w[14] |= (fileSize >> 24) & 0x00000000000000ff;
+
+		w[15] = (fileSize >> 32) & 0x00000000000000ff;
+		w[15] <<= 8;
+		w[15] |= (fileSize >> 40) & 0x00000000000000ff;
+		w[15] <<= 8;
+		w[15] |= (fileSize >> 48) & 0x00000000000000ff;
+		w[15] <<= 8;
+		w[15] |= (fileSize >> 56) & 0x00000000000000ff;
+
+		for (int i = 16; i < 64; ++i) {
+			s0 = S0(w[i-15]);
+			s1 = S1(w[i-2]);
+			w[i] = w[i-16] + s0 + w[i-7] + s1;
+		}
+
+		// Initialize hash value for this chunk
+
+		a = h0;
+		b = h1;
+		c = h2;
+		d = h3;
+		e = h4;
+		f = h5;
+		g = h6;
+		h = h7;
+
+		//main loop
+		for (int i = 0; i < 64; ++i) {
+			t2 = M0(a) + MAJ(a, b, c);
+			t1 = h + M1(e) + CH(e, f, g) + k[i] + w[i];
+			h = g;
+			g = f;
+			f = e;
+			e = d + t1;
+			d = c;
+			c = b;
+			b = a;
+			a = t1 + t2;
+		}
+
+		// update h0 h1 ... values
+
+		h0 += a;
+		h1 += b;
+		h2 += c;
+		h3 += d;
+		h4 += e;
+		h5 += f;
+		h6 += g;
+		h7 += h;
+
+
+	}
+
+	printf("se 1 introia = %d\n", oneMoreChunk);
+	printf("fileSize(bytes) = %d\n", fileSize);
 
 	printf("sha256 = %x%x%x%x%x%x%x\n", h0, h1, h2, h3, h4, h5, h6, h7);
 
