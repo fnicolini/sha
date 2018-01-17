@@ -88,6 +88,8 @@ int main(int argc, char const *argv[]) {
 
     }
 
+    fclose(fp);
+
     /* At this point we finished processing all the possible 64 Bytes chunks of the file
        The file is either fully processed (its size(bytes) was a multiple of 64) or there is still
        some information left to process.
@@ -175,8 +177,6 @@ int main(int argc, char const *argv[]) {
 
 
     printf("sha256 = %x%x%x%x%x%x%x%x\n", hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7]);
-
-    fclose(fp);
 
     return 0;
 }
