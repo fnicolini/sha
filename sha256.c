@@ -1,8 +1,5 @@
 #include "sha256.h"
-#include <stdio.h>
-#include <stdint.h>
-#include <byteswap.h>
-#include <stdlib.h>
+
 
 const uint32_t k[64] = {0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -37,13 +34,7 @@ uint32_t a, b, c, d, e, f, g, h;
 #define CH(e, f, g) (e & f) ^ ((~e) & g)
 
 
-void initW(uint32_t *w, uint8_t *buffer, int length);
-void resetW(uint32_t *w);
-void processChunk(uint32_t * w);
-void initAlphabeth();
-void updateAlphabeth(uint32_t *w);
-void updateHash();
-void startPadding(uint32_t *w, int nElements);
+
 
 int main(int argc, char const *argv[]) {
 
@@ -66,39 +57,26 @@ int main(int argc, char const *argv[]) {
     fileSize = ftell(fp);
     rewind(fp);
 
-    int oneMoreChunk = 0;
+    bool oneMoreChunk = false;
 
-    uint32_t w[64]; // 512 bits chunk buffer + space for extension to 64 32-bits words
-    size_t elementsRead = 0;
+    uint32_t w[64]; // Array that will contain the 512bit chunk extended into 64 32-bits words
+    size_t elementsRead = 0; // Return value of the fread function, used to cycle through the file
 
-    uint8_t buffer[64]; // array of 64 8-bits elements
+    uint8_t buffer[64]; // Input file buffer, size: 64 bytes
 
     // main cycle
-    while ((elementsRead = fread(buffer, 1, 64, fp)) == 64) { // reading 512 bits
+    while ((elementsRead = fread(buffer, 1, 64, fp)) == 64) { // reading 64 bytes, or until EOF
 
-        printf(buffer);
-        int j = 0;
+        //printf(buffer);
 
         initW(w, buffer, 64);
 
-        /*for (int i = 0; i < 64; i += 4) {
-                w[j] = buffer[i+3];
-                w[j] <<= 8;
-                w[j] |= buffer[i+2];
-                w[j] <<= 8;
-                w[j] |= buffer[i+1];
-                w[j] <<= 8;
-                w[j] |= buffer[i];
-                j++;
-
-        }*/
-        printf(w);
-
-        /* transform to big endian
-        for (int i = 0; i < 16; ++i) {
-                w[i] = bswap_32(w[i]);
+        /*
+        for (int i = 0; i < 64; ++i) {
+            printf("w[%d] = %"PRIu32"\n", i, w[i]);
         }
-         */
+        */
+
 
         processChunk(w);
 
@@ -110,50 +88,27 @@ int main(int argc, char const *argv[]) {
 
     }
 
-    uint8_t wordsFilled = elementsRead / 4;
-    uint8_t rest = elementsRead % 4;
+    /* At this point we finished processing all the possible 64 Bytes chunks of the file
+       The file is either fully processed (its size(bytes) was a multiple of 64) or there is still
+       some information left to process.
+       Either way there is still to add the final padding and process some more data.
+    */ 
 
-    int j = 0;
     initW(w, buffer, elementsRead);
-    /*
-    for (int i = 0; i < elementsRead - rest; i += 4) {
-        w[j] = buffer[i + 3];
-        w[j] <<= 8;
-        w[j] |= buffer[i + 2];
-        w[j] <<= 8;
-        w[j] |= buffer[i + 1];
-        w[j] <<= 8;
-        w[j] |= buffer[i];
-        j++;
-    }*/
+
     startPadding(w, elementsRead); // qui w è già a posto, non deve essere shiftata ecc
-    /*if (rest > 0) { // && < 4
-        for (int i = elementsRead - rest; i < elementsRead; ++i) {
-            w[j] |= buffer[i];
-            w[j] <<= 8;
-        }
 
-        w[j] |= 0x80;
-        w[j] <<= 8;
+    
 
-        if (4 - (rest + 1) == 1)
-            w[j] &= 0xffffff00;
-
-        else if (4 - (rest + 1) == 2) {
-            w[j] &= 0xffffff00;
-            w[j] <<= 8;
-            w[j] &= 0xffffff00;
-        }
+    int j = elementsRead / 4;
+    if(elementsRead % 4)
         j++;
-    }*/
 
-    if ((16 - j) >= 2) { // numero di word da 32bit liberi rimanenti nel chunk
+    // At this point j is equal to the 32-bit word in w[] that have been processed
+
+    if ((16 - j) >= 2) { 
         //c'è spazio subito in questo chunk per la lunghezza a 64 bit
-        for (j; j < 14; ++j) {
-            w[j] = 0;
-        }
 
-        printf("FILESIZE HEX = %lx\n", fileSize);
 
         w[14] = fileSize & 0x00000000000000ff;
         w[14] <<= 8;
@@ -171,58 +126,23 @@ int main(int argc, char const *argv[]) {
         w[15] <<= 8;
         w[15] |= (fileSize >> 56) & 0x00000000000000ff;
 
-        printf("W14 HEX = %x\n", w[14]);
-        printf("W15 HEX = %x\n", w[15]);
-    } else {
-        for (j; j < 16; ++j) { // executed max once
-            w[j] = 0;
-        }
-        oneMoreChunk = 1;
-    }
+    } 
+    else 
+        oneMoreChunk = true;
 
     //extension into sixty-four 32-bit words
     processChunk(w);
-    /*
-    for (int i = 16; i < 64; ++i) {
-        s0 = S0(w[i - 15]);
-        s1 = S1(w[i - 2]);
-        w[i] = w[i - 16] + s0 + w[i - 7] + s1;
-    }*/
 
     // Initialize hash value for this chunk
     initAlphabeth();
-    /*
-    a = hash[0];
-    b = hash[1];
-    c = hash[2];
-    d = hash[3];
-    e = hash[4];
-    f = hash[5];
-    g = hash[6];
-    h = hash[7];*/
+
     updateAlphabeth(w);
-    /*
-    //main loop
-    for (int i = 0; i < 64; ++i) {
-        t2 = M0(a) + (MAJ(a, b, c));
-        t1 = h + M1(e) + (CH(e, f, g)) + k[i] + w[i];
-        h = g;
-        g = f;
-        f = e;
-        e = d + t1;
-        d = c;
-        c = b;
-        b = a;
-        a = t1 + t2;
-    }*/
 
     // update h0 h1 ... values
     updateHash();
 
     if (oneMoreChunk) {
-        for (int i = 0; i < 14; ++i) {
-            w[i] = 0;
-        }
+        memset(w, 0x0, 256);
 
         w[14] = fileSize & 0x00000000000000ff;
         w[14] <<= 8;
@@ -241,57 +161,18 @@ int main(int argc, char const *argv[]) {
         w[15] |= (fileSize >> 56) & 0x00000000000000ff;
         
         processChunk(w);
-        /*
-        for (int i = 16; i < 64; ++i) {
-            s0 = S0(w[i - 15]);
-            s1 = S1(w[i - 2]);
-            w[i] = w[i - 16] + s0 + w[i - 7] + s1;
-        }*/
 
         // Initialize hash value for this chunk
         initAlphabeth();
-        /*a = h0;
-        b = h1;
-        c = h2;
-        d = h3;
-        e = h4;
-        f = h5;
-        g = h6;
-        h = h7;*/
-        updateAlphabeth(w);
-        /*
-        //main loop
-        for (int i = 0; i < 64; ++i) {
-            t2 = M0(a) + (MAJ(a, b, c));
-            t1 = h + M1(e) + (CH(e, f, g)) + k[i] + w[i];
-            h = g;
-            g = f;
-            f = e;
-            e = d + t1;
-            d = c;
-            c = b;
-            b = a;
-            a = t1 + t2;
-        }*/
-        
-        updateHash();
-        /*
-        // update h0 h1 ... values
 
-        hash[0] += a;
-        hash[1] += b;
-        hash[2] += c;
-        hash[3] += d;
-        hash[4] += e;
-        hash[5] += f;
-        hash[6] += g;
-        hash[7] += h;*/
+        updateAlphabeth(w);
+
+        updateHash();
+
 
 
     }
 
-    printf("se 1 introia = %d\n", oneMoreChunk);
-    printf("fileSize(bytes) = %ld\n", fileSize);
 
     printf("sha256 = %x%x%x%x%x%x%x%x\n", hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7]);
 
@@ -307,7 +188,7 @@ int main(int argc, char const *argv[]) {
  * @return 
  */
 void initW(uint32_t *w, uint8_t *buffer, int length) {
-    resetW(w);
+    memset(w, 0x0, 256); // slightly faster than the loop cycle
     for (int j = 0; j < length / 4; j++) {
         for (int i = 0; i < 4; i++) {
             w[j] <<= 8;
@@ -316,15 +197,6 @@ void initW(uint32_t *w, uint8_t *buffer, int length) {
     }
 }
 
-/**
- * Resets w, putting all its elements to 0.
- * @param w
- */
-void resetW(uint32_t *w){
-    for(int i = 0; i<64/4; i++){
-        w[i]=0;
-    }
-}
 
 /**
  * Processes the chunk, extending it into 64 32-bit words.
@@ -391,24 +263,25 @@ void updateHash() {
     hash[7] += h;
 
 }
+
 /**
  * Inserts the first byte of padding
  * @param w
  * @param nElements
  */
 void startPadding(uint32_t *w, int nElements){
-    int wordIndex = (nElements)/4; // the floor of the division
+    int wordIndex = (nElements) / 4; // the floor of the division
     /* So that:
      * nElements = 0, 1, 2, 3 -> wordIndex =0
      * nElements = 4, 5... -> wordIndex = 1*/
-    int byteIndex = 4-nElements%4; 
+    int byteIndex = 3 - (nElements % 4); 
     /* So that:
      * nElements = 0 -> byteIndex (of the padding) =0 (counted from LSB to MSB)
      * nElements = 1 -> byteIndex =1 (counted from LSB to MSB)
      */
     
     uint32_t paddingMask = 0xFFFFFF80;
-    paddingMask <<byteIndex * 8;
+    paddingMask <<= byteIndex * 8;
     /*So that:
      *switch(byteIndex){ 
      *   case 0:
