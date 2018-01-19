@@ -57,6 +57,8 @@ int main(int argc, char const *argv[]) {
     fileSize = ftell(fp);
     rewind(fp);
 
+    fileSize *= 8;
+
     bool oneMoreChunk = false;
 
     uint32_t w[64]; // Array that will contain the 512bit chunk extended into 64 32-bits words
@@ -98,7 +100,7 @@ int main(int argc, char const *argv[]) {
 
     initW(w, buffer, elementsRead);
 
-    startPadding(w, elementsRead); // qui w è già a posto, non deve essere shiftata ecc
+    startPadding(w, buffer, elementsRead); // qui w è già a posto, non deve essere shiftata ecc
 
     
 
@@ -112,21 +114,8 @@ int main(int argc, char const *argv[]) {
         //c'è spazio subito in questo chunk per la lunghezza a 64 bit
 
 
-        w[14] = fileSize & 0x00000000000000ff;
-        w[14] <<= 8;
-        w[14] |= (fileSize >> 8) & 0x00000000000000ff;
-        w[14] <<= 8;
-        w[14] |= (fileSize >> 16) & 0x00000000000000ff;
-        w[14] <<= 8;
-        w[14] |= (fileSize >> 24) & 0x00000000000000ff;
-
-        w[15] = (fileSize >> 32) & 0x00000000000000ff;
-        w[15] <<= 8;
-        w[15] |= (fileSize >> 40) & 0x00000000000000ff;
-        w[15] <<= 8;
-        w[15] |= (fileSize >> 48) & 0x00000000000000ff;
-        w[15] <<= 8;
-        w[15] |= (fileSize >> 56) & 0x00000000000000ff;
+        w[14] = fileSize >> 32;
+        w[15] = fileSize & 0x00000000ffffffff;
 
     } 
     else 
@@ -146,21 +135,8 @@ int main(int argc, char const *argv[]) {
     if (oneMoreChunk) {
         memset(w, 0x0, 256);
 
-        w[14] = fileSize & 0x00000000000000ff;
-        w[14] <<= 8;
-        w[14] |= (fileSize >> 8) & 0x00000000000000ff;
-        w[14] <<= 8;
-        w[14] |= (fileSize >> 16) & 0x00000000000000ff;
-        w[14] <<= 8;
-        w[14] |= (fileSize >> 24) & 0x00000000000000ff;
-
-        w[15] = (fileSize >> 32) & 0x00000000000000ff;
-        w[15] <<= 8;
-        w[15] |= (fileSize >> 40) & 0x00000000000000ff;
-        w[15] <<= 8;
-        w[15] |= (fileSize >> 48) & 0x00000000000000ff;
-        w[15] <<= 8;
-        w[15] |= (fileSize >> 56) & 0x00000000000000ff;
+        w[14] = fileSize >> 32;
+        w[15] = fileSize & 0x00000000ffffffff;
         
         processChunk(w);
 
@@ -269,7 +245,7 @@ void updateHash() {
  * @param w
  * @param nElements
  */
-void startPadding(uint32_t *w, int nElements){
+void startPadding(uint32_t *w, uint8_t *buffer, int nElements){
     int wordIndex = (nElements) / 4; // the floor of the division
     /* So that:
      * nElements = 0, 1, 2, 3 -> wordIndex =0
@@ -279,24 +255,19 @@ void startPadding(uint32_t *w, int nElements){
      * nElements = 0 -> byteIndex (of the padding) =0 (counted from LSB to MSB)
      * nElements = 1 -> byteIndex =1 (counted from LSB to MSB)
      */
-    
-    uint32_t paddingMask = 0xFFFFFF80;
+
+    for (int i = 0; i < (nElements % 4); i++) {
+        w[wordIndex] <<= 8;
+        w[wordIndex] |= buffer[(nElements - (nElements % 4)) + i];
+    }
+
+    for (int i = 0; i < 4 - (nElements % 4); ++i)
+        w[wordIndex] <<= 8;
+
+
+    uint32_t paddingMask = 0x00000080;
     paddingMask <<= byteIndex * 8;
-    /*So that:
-     *switch(byteIndex){ 
-     *   case 0:
-     *       paddingMask = 0xFFFFFF80;
-     *       break;
-     *   case 1:
-     *       paddingMask = 0xFFFF8000;
-     *       break;
-     *   case 2:
-     *       paddingMask = 0xFF800000;
-     *       break;
-     *   case 3:
-     *       paddingMask = 0x80000000;
-     * 
-     *}*/
-    w[wordIndex]&=paddingMask;
+
+    w[wordIndex] |= paddingMask;
      
 }

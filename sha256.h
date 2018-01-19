@@ -13,8 +13,7 @@ void processChunk(uint32_t * w);
 void initAlphabeth();
 void updateAlphabeth(uint32_t *w);
 void updateHash();
-void startPadding(uint32_t *w, int nElements);
-
+void startPadding(uint32_t *w, uint8_t *buffer, int nElements);
 
 
 #endif
