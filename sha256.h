@@ -8,12 +8,13 @@
 #include <string.h> //memset
 #include <inttypes.h> //PRIu32
 
-void initW(uint32_t *w, uint8_t *buffer, int length);
-void processChunk(uint32_t * w);
-void initAlphabeth();
-void updateAlphabeth(uint32_t *w);
-void updateHash();
-void startPadding(uint32_t *w, uint8_t *buffer, int nElements);
+void sha256(char const *filePath);
+void sha256_initW(uint32_t *w, uint8_t *buffer, int length);
+void sha256_processChunk(uint32_t * w);
+void sha256_initAlphabeth();
+void sha256_updateAlphabeth(uint32_t *w);
+void sha256_updateHash();
+
 
 
 #endif

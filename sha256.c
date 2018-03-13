@@ -1,7 +1,7 @@
 #include "sha256.h"
 
 
-const uint32_t k[64] = {0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+static const uint32_t k[64] = {0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
     0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
     0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
@@ -10,7 +10,7 @@ const uint32_t k[64] = {0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c2
     0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
 
-uint32_t hash[8] = {
+static const uint32_t starting_hash[8] = {
     0x6a09e667,
     0xbb67ae85,
     0x3c6ef372,
@@ -20,7 +20,10 @@ uint32_t hash[8] = {
     0x1f83d9ab,
     0x5be0cd19
 };
-uint32_t a, b, c, d, e, f, g, h;
+
+static uint32_t hash[8];
+
+static uint32_t a, b, c, d, e, f, g, h;
 
 #define ROTL(a, b) ((a << b) | (a >> (32 - b)))
 #define ROTR(a, b) ((a >> b) | (a << (32 - b)))
@@ -36,20 +39,16 @@ uint32_t a, b, c, d, e, f, g, h;
 
 
 
-int main(int argc, char const *argv[]) {
+void sha256(const char *filePath) {
 
-    if (argc == 1) {
-        fprintf(stderr, "Usage: %s <input file>\n", argv[0]);
-        return 1;
-    }
-
-    uint32_t s0, s1, m0, maj, t2, m1, ch, t1;
+    for (int i = 0; i < 8; ++i)
+        hash[i] = starting_hash[i];
 
 
-    FILE *fp = fopen(argv[1], "rb");
+    FILE *fp = fopen(filePath, "rb");
     if (fp == NULL) {
         perror("Error");
-        return (1);
+        return;
     }
 
     uint64_t fileSize = 0;
@@ -68,10 +67,9 @@ int main(int argc, char const *argv[]) {
 
     // main cycle
     while ((elementsRead = fread(buffer, 1, 64, fp)) == 64) { // reading 64 bytes, or until EOF
-
         //printf(buffer);
 
-        initW(w, buffer, 64);
+        sha256_initW(w, buffer, 64);
 
         /*
         for (int i = 0; i < 64; ++i) {
@@ -80,13 +78,13 @@ int main(int argc, char const *argv[]) {
         */
 
 
-        processChunk(w);
+        sha256_processChunk(w);
 
-        initAlphabeth();
+        sha256_initAlphabeth();
 
-        updateAlphabeth(w);
+        sha256_updateAlphabeth(w);
 
-        updateHash();
+        sha256_updateHash();
 
     }
 
@@ -98,19 +96,14 @@ int main(int argc, char const *argv[]) {
        Either way there is still to add the final padding and process some more data.
     */ 
 
-    initW(w, buffer, elementsRead);
+    buffer[elementsRead] = 0x80;
+    elementsRead++;
 
-    startPadding(w, buffer, elementsRead); // qui w è già a posto, non deve essere shiftata ecc
-
-    
-
-    int j = elementsRead / 4;
-    if(elementsRead % 4)
-        j++;
+    sha256_initW(w, buffer, 64); // ottimizzabile se si è maniaci sostituiendo 64 con elementsRead + 4
 
     // At this point j is equal to the 32-bit word in w[] that have been processed
 
-    if ((16 - j) >= 2) { 
+    if (elementsRead / 4 < 15) { 
         //c'è spazio subito in questo chunk per la lunghezza a 64 bit
 
 
@@ -122,15 +115,15 @@ int main(int argc, char const *argv[]) {
         oneMoreChunk = true;
 
     //extension into sixty-four 32-bit words
-    processChunk(w);
+    sha256_processChunk(w);
 
     // Initialize hash value for this chunk
-    initAlphabeth();
+    sha256_initAlphabeth();
 
-    updateAlphabeth(w);
+    sha256_updateAlphabeth(w);
 
     // update h0 h1 ... values
-    updateHash();
+    sha256_updateHash();
 
     if (oneMoreChunk) {
         memset(w, 0x0, 256);
@@ -138,23 +131,26 @@ int main(int argc, char const *argv[]) {
         w[14] = fileSize >> 32;
         w[15] = fileSize & 0x00000000ffffffff;
         
-        processChunk(w);
+        sha256_processChunk(w);
 
         // Initialize hash value for this chunk
-        initAlphabeth();
+        sha256_initAlphabeth();
 
-        updateAlphabeth(w);
+        sha256_updateAlphabeth(w);
 
-        updateHash();
+        sha256_updateHash();
 
 
 
     }
 
+    char actualpath [100];
+    char *ptr;
+    ptr = realpath(filePath, actualpath);
 
-    printf("sha256 = %x%x%x%x%x%x%x%x\n", hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7]);
+    printf("sha256 = %x%x%x%x%x%x%x%x    %s\n", hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7], actualpath);
 
-    return 0;
+
 }
 
 /**
@@ -163,7 +159,7 @@ int main(int argc, char const *argv[]) {
  * @param the number of chars it contains (there may be some empty chars in the buffer)
  * @return 
  */
-void initW(uint32_t *w, uint8_t *buffer, int length) {
+void sha256_initW(uint32_t *w, uint8_t *buffer, int length) {
     memset(w, 0x0, 256); // slightly faster than the loop cycle
     for (int j = 0; j < length / 4; j++) {
         for (int i = 0; i < 4; i++) {
@@ -171,6 +167,7 @@ void initW(uint32_t *w, uint8_t *buffer, int length) {
             w[j] |= buffer[j * 4 + i];
         }
     }
+    memset(buffer, 0x0, 64);
 }
 
 
@@ -178,7 +175,7 @@ void initW(uint32_t *w, uint8_t *buffer, int length) {
  * Processes the chunk, extending it into 64 32-bit words.
  * @param chunk
  */
-void processChunk(uint32_t * w) {
+void sha256_processChunk(uint32_t * w) {
     //extension into sixty-four 32-bit words
     uint32_t s0, s1;
     for (int i = 16; i < 64; ++i) {
@@ -192,7 +189,7 @@ void processChunk(uint32_t * w) {
 /**
  * Initializes the letters a, b, c... to the current values of the hash
  */
-void initAlphabeth() {
+void sha256_initAlphabeth() {
     // Initialize hash value for this chunk
     a = hash[0];
     b = hash[1];
@@ -206,7 +203,7 @@ void initAlphabeth() {
 /**
  * Updates the aphabeth.
  */
-void updateAlphabeth(uint32_t *w) {
+void sha256_updateAlphabeth(uint32_t *w) {
     uint32_t t1, t2;
     //main loop
     for (int i = 0; i < 64; ++i) {
@@ -227,7 +224,7 @@ void updateAlphabeth(uint32_t *w) {
 /**
  * Updates the hash adding it the current values of the letters a, b, c,...
  */
-void updateHash() {
+void sha256_updateHash() {
 
     hash[0] += a;
     hash[1] += b;
@@ -238,36 +235,4 @@ void updateHash() {
     hash[6] += g;
     hash[7] += h;
 
-}
-
-/**
- * Inserts the first byte of padding
- * @param w
- * @param nElements
- */
-void startPadding(uint32_t *w, uint8_t *buffer, int nElements){
-    int wordIndex = (nElements) / 4; // the floor of the division
-    /* So that:
-     * nElements = 0, 1, 2, 3 -> wordIndex =0
-     * nElements = 4, 5... -> wordIndex = 1*/
-    int byteIndex = 3 - (nElements % 4); 
-    /* So that:
-     * nElements = 0 -> byteIndex (of the padding) =0 (counted from LSB to MSB)
-     * nElements = 1 -> byteIndex =1 (counted from LSB to MSB)
-     */
-
-    for (int i = 0; i < (nElements % 4); i++) {
-        w[wordIndex] <<= 8;
-        w[wordIndex] |= buffer[(nElements - (nElements % 4)) + i];
-    }
-
-    for (int i = 0; i < 4 - (nElements % 4); ++i)
-        w[wordIndex] <<= 8;
-
-
-    uint32_t paddingMask = 0x00000080;
-    paddingMask <<= byteIndex * 8;
-
-    w[wordIndex] |= paddingMask;
-     
 }
